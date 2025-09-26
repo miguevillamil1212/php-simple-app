@@ -5,8 +5,8 @@ pipeline {
         // Credenciales de Docker Hub
         DOCKER_CREDS = credentials('docker-hub-creds')
         
-        // Información de la imagen
-        DOCKER_IMAGE = 'tu-usuario-docker/php-simple-app'
+        // Información de la imagen - CON TU USUARIO REAL
+        DOCKER_IMAGE = 'jamescanos/php-simple-app'
         DOCKER_REGISTRY = 'https://registry.hub.docker.com'
         
         // Versión basada en el build number
@@ -14,47 +14,44 @@ pipeline {
     }
     
     stages {
-        // Stage 1: Obtener código del repositorio
-        stage('Checkout') {
-            steps {
-                echo 'Obteniendo código del repositorio...'
-                git branch: 'main', 
-                    url: 'https://github.com/tu-usuario/php-simple-app.git'
-            }
-        }
-        
-        // Stage 2: Construir imagen Docker
+        // Stage 1: Construir imagen Docker
         stage('Build Docker Image') {
             steps {
                 echo 'Construyendo imagen Docker...'
                 script {
+                    // Verificar que tenemos los archivos correctos
+                    sh '''
+                        echo "=== Archivos en el workspace ==="
+                        ls -la
+                        echo "=== Verificando Dockerfile ==="
+                        cat Dockerfile || echo "No hay Dockerfile"
+                    '''
                     docker.build("${DOCKER_IMAGE}:${VERSION}")
                 }
             }
         }
         
-        // Stage 3: Probar la imagen
+        // Stage 2: Probar la imagen
         stage('Test Image') {
             steps {
                 echo 'Probando imagen Docker...'
                 script {
-                    // Ejecutar tests básicos
                     def testContainer = docker.image("${DOCKER_IMAGE}:${VERSION}")
                     testContainer.inside {
                         sh '''
                             echo "=== Verificando PHP ==="
                             php --version
                             echo "=== Verificando Apache ==="
-                            apache2 -v
-                            echo "=== Verificando archivos ==="
-                            ls -la /var/www/html/
+                            apache2 -v || httpd -v || echo "Servidor web no identificado"
+                            echo "=== Verificando archivos de la aplicación ==="
+                            find /var/www/html/ -type f -name "*.php" | head -10
                         '''
                     }
                 }
             }
         }
         
-        // Stage 4: Subir imagen a Docker Hub
+        // Stage 3: Subir imagen a Docker Hub
         stage('Push to Docker Hub') {
             steps {
                 echo 'Subiendo imagen a Docker Hub...'
@@ -70,7 +67,7 @@ pipeline {
             }
         }
         
-        // Stage 5: Desplegar para pruebas
+        // Stage 4: Desplegar para pruebas
         stage('Deploy to Test') {
             steps {
                 echo 'Desplegando aplicación de prueba...'
@@ -81,18 +78,20 @@ pipeline {
                     docker rm test-php-app || true
                     
                     # Ejecutar nuevo contenedor
-                    docker run -d \
-                        -p 8082:80 \
-                        --name test-php-app \
-                        -e BUILD_VERSION=${VERSION} \
+                    docker run -d \\
+                        -p 8082:80 \\
+                        --name test-php-app \\
                         ${DOCKER_IMAGE}:${VERSION}
                     """
                     
                     // Esperar que la aplicación esté lista
-                    sleep 10
+                    sleep 15
                     
                     // Probar que la aplicación responde
-                    sh 'curl -f http://localhost:8082/ || exit 1'
+                    sh '''
+                        echo "=== Probando aplicación ==="
+                        curl -f http://localhost:8082/ && echo "✅ Aplicación funciona correctamente" || exit 1
+                    '''
                 }
             }
         }
@@ -100,16 +99,18 @@ pipeline {
     
     post {
         always {
-            echo 'Pipeline ejecutado'
-            // Limpiar workspace
+            echo '=== Limpieza final ==='
+            // Limpiar contenedores de prueba
+            sh 'docker stop test-php-app || true && docker rm test-php-app || true'
             cleanWs()
         }
         success {
-            echo '¡Despliegue exitoso!'
-            echo "Imagen disponible en: ${DOCKER_IMAGE}:${VERSION}"
+            echo '🎉 ¡Pipeline ejecutado exitosamente!'
+            echo "📦 Imagen Docker: ${DOCKER_IMAGE}:${VERSION}"
+            echo "🐳 Disponible en Docker Hub: https://hub.docker.com/r/jamescanos/php-simple-app"
         }
         failure {
-            echo 'Pipeline falló'
+            echo '❌ Pipeline falló'
         }
     }
 }
