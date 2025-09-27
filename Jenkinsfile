@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/jamescanos/php-simple-app.git'
+                git branch: 'main', url: 'https://github.com/miguevillamil1212/php-simple-app.git'
             }
         }
 
