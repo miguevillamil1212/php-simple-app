@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')  // crea credencial en Jenkins con tu usuario/pass de DockerHub
-        IMAGE_NAME = "jamescanos/php-simple-app"
+        IMAGE_NAME = "miguel1212/php-simple-app"
     }
 
     stages {
