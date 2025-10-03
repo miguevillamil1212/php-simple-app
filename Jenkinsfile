@@ -7,6 +7,14 @@ pipeline {
     timestamps()
   }
 
+  parameters {
+    string(
+      name: 'DOCKERHUB_TRIGGER_URL',
+      defaultValue: '',
+      description: 'URL del Build Trigger de Docker Hub (se usa solo si NO hay Docker en el nodo).'
+    )
+  }
+
   environment {
     IMAGE_NAME      = 'miguel1212/php-simple-app'
     DOCKER_BUILDKIT = '1'
@@ -47,7 +55,7 @@ pipeline {
       when { expression { env.HAS_DOCKER == 'true' } }
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'docker-hub-creds',   // 👈 aquí tu credencial
+          credentialsId: 'docker-hub-creds',   // <- tu credencial de Docker Hub
           usernameVariable: 'DOCKERHUB_USER',
           passwordVariable: 'DOCKERHUB_PASS'
         )]) {
@@ -78,27 +86,16 @@ pipeline {
       when { expression { env.HAS_DOCKER == 'false' } }
       steps {
         script {
-          def triggerUrl = ''
-          try {
-            withCredentials([string(credentialsId: 'dockerhub-trigger-url', variable: 'TRIGGER_URL')]) {
-              triggerUrl = "${TRIGGER_URL}".trim()
-            }
-          } catch (ignored) {
-            triggerUrl = ''
+          def triggerUrl = (params.DOCKERHUB_TRIGGER_URL ?: '').trim()
+          if (!triggerUrl) {
+            error('No hay Docker en el nodo y DOCKERHUB_TRIGGER_URL está vacío. Proporciona el Trigger URL de Docker Hub al lanzar el job.')
           }
-
-          if (triggerUrl) {
-            sh """
-              set -euxo pipefail
-              echo 'Disparando build remoto en Docker Hub...'
-              curl -fsSL -X POST -H 'Content-Type: application/json' -d '{"build": true}' '${triggerUrl}'
-              echo 'Trigger enviado. El build/push se ejecutará en Docker Hub.'
-            """
-          } else {
-            echo 'No hay Docker local y no se encontró la credencial "dockerhub-trigger-url".'
-            echo 'Consejo: crea en Docker Hub un Build Trigger y guárdalo en Jenkins como Secret Text con id "dockerhub-trigger-url".'
-            currentBuild.result = 'UNSTABLE'
-          }
+          sh """
+            set -euxo pipefail
+            echo 'Disparando build remoto en Docker Hub...'
+            curl -fsSL -X POST -H 'Content-Type: application/json' -d '{"build": true}' '${triggerUrl}'
+            echo 'Trigger enviado. El build/push se ejecutará en Docker Hub.'
+          """
         }
       }
     }
@@ -106,7 +103,6 @@ pipeline {
 
   post {
     success  { echo '✅ Pipeline completado con éxito' }
-    unstable { echo '⚠️ Pipeline marcado UNSTABLE (revisa el trigger remoto de Docker Hub)' }
-    failure  { echo '❌ Pipeline falló' }
+    failure  { echo '❌ Pipeline falló (revisa si pegaste DOCKERHUB_TRIGGER_URL o instala Docker en el nodo)' }
   }
 }
