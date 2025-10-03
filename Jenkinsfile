@@ -1,8 +1,16 @@
 pipeline {
-  agent any
+  agent {
+    // Ejecuta los steps dentro de un contenedor que trae docker CLI
+    docker {
+      image 'docker:27.1.2-cli'
+      // Monta el socket del daemon Docker del host
+      args  '-v /var/run/docker.sock:/var/run/docker.sock'
+    }
+  }
 
   environment {
-    IMAGE_NAME = "miguel1212/php-simple-app"
+    IMAGE_NAME = 'miguel1212/php-simple-app'
+    DOCKER_BUILDKIT = '1'
   }
 
   stages {
@@ -37,27 +45,19 @@ pipeline {
         }
       }
       post {
-        always {
-          // Evita dejar sesión abierta
-          sh 'docker logout || true'
-        }
+        always { sh 'docker logout || true' }
       }
     }
 
     stage('Cleanup') {
       steps {
-        // Aquí sí hay node/workspace, no falla FilePath
         sh 'docker system prune -f || true'
       }
     }
   }
 
   post {
-    success {
-      echo "Pipeline completado con éxito"
-    }
-    failure {
-      echo "Pipeline falló"
-    }
+    success { echo 'Pipeline completado con éxito' }
+    failure { echo 'Pipeline falló' }
   }
 }
