@@ -8,9 +8,9 @@ pipeline {
   }
 
   environment {
-    IMAGE_NAME       = 'miguel1212/php-simple-app'
-    DOCKER_BUILDKIT  = '1'
-    APP_ARCHIVE      = 'php-simple-app.zip'
+    IMAGE_NAME      = 'miguel1212/php-simple-app'
+    DOCKER_BUILDKIT = '1'
+    APP_ARCHIVE     = 'php-simple-app.tar.gz'
   }
 
   stages {
@@ -35,7 +35,7 @@ pipeline {
       when { expression { env.HAS_DOCKER == 'true' } }
       steps {
         sh '''
-          set -euxo pipefail
+          set -eu
           docker version
           docker build \
             -t $IMAGE_NAME:latest \
@@ -53,16 +53,12 @@ pipeline {
           passwordVariable: 'DOCKERHUB_PASS'
         )]) {
           sh '''
-            set -euxo pipefail
+            set -eu
             echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
             docker push $IMAGE_NAME:latest
             docker push $IMAGE_NAME:${BUILD_NUMBER}
+            docker logout || true
           '''
-        }
-      }
-      post {
-        always {
-          sh 'docker logout || true'
         }
       }
     }
@@ -79,19 +75,23 @@ pipeline {
       when { expression { env.HAS_DOCKER == "false" } }
       steps {
         sh '''
-          set -euxo pipefail
+          set -eu
           rm -f "$APP_ARCHIVE"
-          # Excluye .git y otros temporales
-          zip -r "$APP_ARCHIVE" . -x "*.git*"
+          # Empaqueta todo excepto .git y el workspace temporal de Jenkins
+          tar --exclude-vcs \
+              --exclude="./.git" \
+              --exclude="./.git/*" \
+              --exclude="./**/@tmp/**" \
+              -czf "$APP_ARCHIVE" .
         '''
         archiveArtifacts artifacts: "${APP_ARCHIVE}", fingerprint: true
-        echo "No hay Docker en el nodo. Se empaquetó la app y se archivó como artefacto: ${APP_ARCHIVE}"
+        echo "No hay Docker en el nodo. Se archivó la app como: ${APP_ARCHIVE}"
       }
     }
   }
 
   post {
-    success  { echo '✅ Pipeline completado con éxito (Docker push si había Docker; artefacto ZIP si no).' }
-    failure  { echo '❌ Pipeline falló' }
+    success { echo '✅ Pipeline completado con éxito (Docker push si había Docker; artefacto .tar.gz si no).' }
+    failure { echo '❌ Pipeline falló' }
   }
 }
