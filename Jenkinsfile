@@ -1,9 +1,7 @@
 pipeline {
   agent {
-    // Ejecuta los steps dentro de un contenedor que trae docker CLI
     docker {
       image 'docker:27.1.2-cli'
-      // Monta el socket del daemon Docker del host
       args  '-v /var/run/docker.sock:/var/run/docker.sock'
     }
   }
@@ -23,6 +21,7 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         sh '''
+          docker version
           docker build \
             -t $IMAGE_NAME:latest \
             -t $IMAGE_NAME:${BUILD_NUMBER} .
