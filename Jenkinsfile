@@ -10,6 +10,7 @@ pipeline {
   environment {
     IMAGE_NAME       = 'miguel1212/php-simple-app'
     DOCKER_BUILDKIT  = '1'
+    APP_ARCHIVE      = 'php-simple-app.zip'
   }
 
   stages {
@@ -29,8 +30,8 @@ pipeline {
       }
     }
 
-    /* ========= CAMINO A: Docker local disponible ========= */
-    stage('Build Docker Image (local)') {
+    /* ========= Camino A: hay Docker => build & push ========= */
+    stage('Build Docker Image') {
       when { expression { env.HAS_DOCKER == 'true' } }
       steps {
         sh '''
@@ -43,11 +44,11 @@ pipeline {
       }
     }
 
-    stage('Login & Push (local)') {
+    stage('Login & Push a Docker Hub') {
       when { expression { env.HAS_DOCKER == 'true' } }
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'docker-hub-creds',   // 👈 tu credencial
+          credentialsId: 'docker-hub-creds',
           usernameVariable: 'DOCKERHUB_USER',
           passwordVariable: 'DOCKERHUB_PASS'
         )]) {
@@ -66,48 +67,31 @@ pipeline {
       }
     }
 
-    stage('Cleanup (local)') {
+    stage('Cleanup Docker') {
       when { expression { env.HAS_DOCKER == 'true' } }
       steps {
         sh 'docker system prune -f || true'
       }
     }
 
-    /* ========= CAMINO B: Sin Docker → build remoto en Docker Hub ========= */
-    stage('Trigger Docker Hub build (remoto)') {
-      when { expression { env.HAS_DOCKER == 'false' } }
+    /* ========= Camino B: NO hay Docker => empaquetar y archivar ========= */
+    stage('Empaquetar app (sin Docker)') {
+      when { expression { env.HAS_DOCKER == "false" } }
       steps {
-        script {
-          // Intenta leer la credencial Secret Text con el Trigger URL (si existe)
-          def triggerUrl = ''
-          try {
-            withCredentials([string(credentialsId: 'dockerhub-trigger-url', variable: 'TRIGGER_URL')]) {
-              triggerUrl = "${TRIGGER_URL}".trim()
-            }
-          } catch (ignored) {
-            triggerUrl = ''
-          }
-
-          if (triggerUrl) {
-            sh """
-              set -euxo pipefail
-              echo 'Disparando build remoto en Docker Hub...'
-              curl -fsSL -X POST -H 'Content-Type: application/json' -d '{"build": true}' '${triggerUrl}'
-              echo 'Trigger enviado. El build/push se ejecutará en Docker Hub.'
-            """
-          } else {
-            echo 'No hay Docker local y no se encontró la credencial "dockerhub-trigger-url".'
-            echo 'Puedes crear el Build Trigger en Docker Hub y guardarlo en Jenkins como Secret Text con id "dockerhub-trigger-url".'
-            currentBuild.result = 'UNSTABLE'  // 👈 no falla el pipeline
-          }
-        }
+        sh '''
+          set -euxo pipefail
+          rm -f "$APP_ARCHIVE"
+          # Excluye .git y otros temporales
+          zip -r "$APP_ARCHIVE" . -x "*.git*"
+        '''
+        archiveArtifacts artifacts: "${APP_ARCHIVE}", fingerprint: true
+        echo "No hay Docker en el nodo. Se empaquetó la app y se archivó como artefacto: ${APP_ARCHIVE}"
       }
     }
   }
 
   post {
-    success  { echo '✅ Pipeline completado con éxito' }
-    unstable { echo '⚠️ Pipeline UNSTABLE (no había Docker ni trigger remoto). Configura "dockerhub-trigger-url" para automatizar el build/push.' }
+    success  { echo '✅ Pipeline completado con éxito (Docker push si había Docker; artefacto ZIP si no).' }
     failure  { echo '❌ Pipeline falló' }
   }
 }
